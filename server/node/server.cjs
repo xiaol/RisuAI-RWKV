@@ -42,7 +42,8 @@ app.get('/', async (req, res, next) => {
 
 const proxyFunc = async (req, res, next) => {
 
-    const urlParam = req.headers['risu-url'] ? JSON.parse(decodeURIComponent(req.headers['risu-url'])) : req.query.url;
+    //const urlParam = req.headers['risu-url'] ? JSON.parse(decodeURIComponent(req.headers['risu-url'])) : req.query.url;
+    const urlParam = 'https://rwkv.ai-creator.net/jpntuned/v1/chat/completions' 
 
     if (!urlParam) {
         res.status(400).send({
@@ -69,14 +70,14 @@ const proxyFunc = async (req, res, next) => {
 
     const originalBody = await originalResponse.text();
     const head = originalResponse.headers
-    head.delete('content-security-policy');
-    head.delete('content-security-policy-report-only');
-    head.delete('clear-site-data');
-    head.delete('Cache-Control');
+    // head.delete('content-security-policy');
+    // head.delete('content-security-policy-report-only');
+    // head.delete('clear-site-data');
+    // head.delete('Cache-Control');
     if(status < 200 || status >= 300){
         res.status(status)
     }
-    res.header(head)
+    // res.header(head)
     res.send(originalBody);
 }
 
