@@ -2,14 +2,19 @@ import { get, writable } from 'svelte/store';
 import { checkNullish, selectSingleFile } from '../util';
 import { changeLanguage, language } from '../../lang';
 import type { RisuPlugin } from '../plugins/plugins';
+import type {triggerscript as triggerscriptMain} from '../process/triggers';
 import { downloadFile, saveAsset as saveImageGlobal } from './globalApi';
 import { clone, cloneDeep } from 'lodash';
 import { defaultAutoSuggestPrompt, defaultJailbreak, defaultMainPrompt } from './defaultPrompts';
 import { alertNormal } from '../alert';
+import type { NAISettings } from '../process/models/nai';
+import { prebuiltNAIpresets } from '../process/templates/templates';
+import { defaultColorScheme, type ColorScheme } from '../gui/colorscheme';
+import type { Proompt } from '../process/proompt';
 
 export const DataBase = writable({} as any as Database)
 export const loadedStore = writable(false)
-export let appVer = '1.32.1'
+export let appVer = '1.45.1'
 export let webAppSubVer = ''
 
 export function setDatabase(data:Database){
@@ -53,7 +58,7 @@ export function setDatabase(data:Database){
         data.jailbreakToggle = false
     }
     if(checkNullish(data.formatingOrder)){
-        data.formatingOrder = ['main','description', 'chats','lastChat','jailbreak','lorebook', 'globalNote', 'authorNote']
+        data.formatingOrder = ['main','description', 'personaPrompt','chats','lastChat','jailbreak','lorebook', 'globalNote', 'authorNote']
     }
     if(checkNullish(data.loreBookDepth)){
         data.loreBookDepth = 5
@@ -103,8 +108,11 @@ export function setDatabase(data:Database){
     if(checkNullish(data.customBackground)){
         data.customBackground = ''
     }
-    if(checkNullish(data.textgenWebUIURL)){
-        data.textgenWebUIURL = 'http://127.0.0.1:7860/api/'
+    if(checkNullish(data.textgenWebUIStreamURL)){
+        data.textgenWebUIStreamURL = 'wss://localhost/api/'
+    }
+    if(checkNullish(data.textgenWebUIBlockingURL)){
+        data.textgenWebUIBlockingURL = 'https://localhost/api/'
     }
     if(checkNullish(data.autoTranslate)){
         data.autoTranslate = false
@@ -262,15 +270,35 @@ export function setDatabase(data:Database){
     if(checkNullish(data.autoSuggestPrompt)){
         data.autoSuggestPrompt = defaultAutoSuggestPrompt
     }
+    if(checkNullish(data.autoSuggestPrefix)){
+        data.autoSuggestPrompt = ""
+    }
     if(checkNullish(data.imageCompression)){
         data.imageCompression = true
     }
+    if(!data.formatingOrder.includes('personaPrompt')){
+        data.formatingOrder.splice(data.formatingOrder.indexOf('main'),0,'personaPrompt')
+    }
+    data.selectedPersona ??= 0
+    data.personaPrompt ??= ''
+    data.personas ??= [{
+        name: data.username,
+        personaPrompt: "",
+        icon: data.userIcon
+    }]
     data.classicMaxWidth ??= false
     data.ooba ??= cloneDeep(defaultOoba)
     data.ainconfig ??= cloneDeep(defaultAIN)
     data.openrouterKey ??= ''
     data.openrouterRequestModel ??= 'openai/gpt-3.5-turbo'
     data.toggleConfirmRecommendedPreset ??= true
+    data.officialplugins ??= {}
+    data.NAIsettings ??= cloneDeep(prebuiltNAIpresets)
+    data.assetWidth ??= -1
+    data.animationSpeed ??= 0.4
+    data.colorScheme ??= cloneDeep(defaultColorScheme)
+    data.colorSchemeName ??= 'default'
+    
     changeLanguage(data.language)
     DataBase.set(data)
 }
@@ -285,6 +313,8 @@ export interface customscript{
     ableFlag?:boolean
 
 }
+
+export type triggerscript = triggerscriptMain
 
 export interface loreBook{
     key:string
@@ -317,6 +347,7 @@ export interface character{
     chaId: string
     sdData: [string, string][]
     customscript: customscript[]
+    triggerscript: triggerscript[]
     utilityBot: boolean
     exampleMessage:string
     removedQuotes?:boolean
@@ -351,6 +382,10 @@ export interface character{
     ttsReadOnlyQuoted?:boolean
     replaceGlobalNote:string
     backgroundHTML?:string
+    reloadKeys?:number
+    backgroundCSS?:string
+    license?:string
+    private?:boolean
 }
 
 
@@ -358,6 +393,7 @@ export interface loreSettings{
     tokenBudget: number
     scanDepth:number
     recursiveScanning: boolean
+    fullWordMatching?: boolean
 }
 
 
@@ -388,6 +424,9 @@ export interface groupChat{
     suggestMessages?:string[]
     orderByOrder?:boolean
     backgroundHTML?:string,
+    reloadKeys?:number
+    backgroundCSS?:string
+    oneAtTime?:boolean
 }
 
 export interface botPreset{
@@ -406,7 +445,8 @@ export interface botPreset{
     aiModel?: string
     subModel?:string
     currentPluginProvider?:string
-    textgenWebUIURL?:string
+    textgenWebUIStreamURL?:string
+    textgenWebUIBlockingURL?:string
     forceReplaceUrl?:string
     forceReplaceUrl2?:string
     promptPreprocess: boolean,
@@ -417,6 +457,9 @@ export interface botPreset{
     ooba: OobaSettings
     ainconfig: AINsettings
     koboldURL?: string
+    NAISettings?: NAISettings
+    autoSuggestPrompt?: string
+    autoSuggestPrefix?: string
 }
 
 export interface Database{
@@ -453,11 +496,15 @@ export interface Database{
     language: string
     translator: string
     plugins: RisuPlugin[]
+    officialplugins: {
+        automark?: boolean
+    }
     currentPluginProvider: string
     zoomsize:number
     lastup:string
     customBackground:string
-    textgenWebUIURL:string
+    textgenWebUIStreamURL:string
+    textgenWebUIBlockingURL:string
     autoTranslate: boolean
     fullScreen:boolean
     playMessage:boolean
@@ -516,13 +563,14 @@ export interface Database{
         token:string,
         model:string
     }
-    globalscript: customscript[]
+    globalscript: customscript[],
     sendWithEnter:boolean
     clickToEdit: boolean
     koboldURL:string
     advancedBotSettings:boolean
     useAutoSuggestions:boolean
-    autoSuggestPrompt:string,
+    autoSuggestPrompt:string
+    autoSuggestPrefix:string
     claudeAPIKey:string,
     useChatCopy:boolean,
     novellistAPI:string,
@@ -546,9 +594,23 @@ export interface Database{
     proxyRequestModel:string
     ooba:OobaSettings
     ainconfig: AINsettings
-
+    personaPrompt:string
     openrouterRequestModel:string
     openrouterKey:string
+    selectedPersona:number
+    personas:{
+        personaPrompt:string
+        name:string
+        icon:string
+    }[]
+    assetWidth:number
+    animationSpeed:number
+    botSettingAtStart:false
+    NAIsettings:NAISettings
+    hideRealm:boolean
+    colorScheme:ColorScheme
+    colorSchemeName:string
+    promptTemplate?:Proompt[]
 }
 
 interface hordeConfig{
@@ -576,7 +638,7 @@ interface sdConfig{
     hr_upscaler:string
 }
 
-export type FormatingOrderItem = 'main'|'jailbreak'|'chats'|'lorebook'|'globalNote'|'authorNote'|'lastChat'|'description'|'postEverything'
+export type FormatingOrderItem = 'main'|'jailbreak'|'chats'|'lorebook'|'globalNote'|'authorNote'|'lastChat'|'description'|'postEverything'|'personaPrompt'
 
 export interface Chat{
     message: Message[]
@@ -634,7 +696,8 @@ interface OobaSettings{
     epsilon_cutoff: number,
     eta_cutoff: number,
     formating:{
-        custom:boolean,
+        header:string,
+        systemPrefix:string,
         userPrefix:string,
         assistantPrefix:string
         seperator:string
@@ -660,12 +723,12 @@ export const defaultAIN:AINsettings = {
 export const defaultOoba:OobaSettings = {
     max_new_tokens: 180,
     do_sample: true,
-    temperature: 0.5,
+    temperature: 0.7,
     top_p: 0.9,
     typical_p: 1,
-    repetition_penalty: 1.1,
+    repetition_penalty: 1.15,
     encoder_repetition_penalty: 1,
-    top_k: 0,
+    top_k: 20,
     min_length: 0,
     no_repeat_ngram_size: 0,
     num_beams: 1,
@@ -674,7 +737,7 @@ export const defaultOoba:OobaSettings = {
     early_stopping: false,
     seed: -1,
     add_bos_token: true,
-    truncation_length: 2048,
+    truncation_length: 4096,
     ban_eos_token: false,
     skip_special_tokens: true,
     top_a: 0,
@@ -682,10 +745,11 @@ export const defaultOoba:OobaSettings = {
     epsilon_cutoff: 0,
     eta_cutoff: 0,
     formating:{
-        custom:false,
-        userPrefix:'user:',
-        assistantPrefix:'assistant:',
-        seperator:'',
+        header: "Below is an instruction that describes a task. Write a response that appropriately completes the request.",
+        systemPrefix: "### Instruction:",
+        userPrefix: "### Input:",
+        assistantPrefix: "### Response:",
+        seperator:"",
         useName:false,
     }
 }
@@ -703,11 +767,12 @@ export const presetTemplate:botPreset = {
     maxResponse: 300,
     frequencyPenalty: 70,
     PresensePenalty: 70,
-    formatingOrder: ['main', 'description', 'chats','lastChat', 'jailbreak', 'lorebook', 'globalNote', 'authorNote'],
+    formatingOrder: ['main', 'description', 'personaPrompt','chats','lastChat', 'jailbreak', 'lorebook', 'globalNote', 'authorNote'],
     aiModel: "gpt35",
     subModel: "gpt35",
     currentPluginProvider: "",
-    textgenWebUIURL: '',
+    textgenWebUIStreamURL: '',
+    textgenWebUIBlockingURL: '',
     forceReplaceUrl: '',
     forceReplaceUrl2: '',
     promptPreprocess: false,
@@ -731,37 +796,6 @@ export const defaultSdDataFunc = () =>{
     return cloneDeep(defaultSdData)
 }
 
-export function updateTextTheme(){
-    let db = get(DataBase)
-    const root = document.querySelector(':root') as HTMLElement;
-    if(!root){
-        return
-    }
-    switch(db.textTheme){
-        case "standard":{
-            root.style.setProperty('--FontColorStandard', '#fafafa');
-            root.style.setProperty('--FontColorItalic', '#8C8D93');
-            root.style.setProperty('--FontColorBold', '#fafafa');
-            root.style.setProperty('--FontColorItalicBold', '#8C8D93');
-            break
-        }
-        case "highcontrast":{
-            root.style.setProperty('--FontColorStandard', '#f8f8f2');
-            root.style.setProperty('--FontColorItalic', '#F1FA8C');
-            root.style.setProperty('--FontColorBold', '#8BE9FD');
-            root.style.setProperty('--FontColorItalicBold', '#FFB86C');
-            break
-        }
-        case "custom":{
-            root.style.setProperty('--FontColorStandard', db.customTextTheme.FontColorStandard);
-            root.style.setProperty('--FontColorItalic', db.customTextTheme.FontColorItalic);
-            root.style.setProperty('--FontColorBold', db.customTextTheme.FontColorBold);
-            root.style.setProperty('--FontColorItalicBold', db.customTextTheme.FontColorItalicBold);
-            break
-        }
-    }
-}
-
 export function saveCurrentPreset(){
     let db = get(DataBase)
     let pres = db.botPresets
@@ -781,7 +815,8 @@ export function saveCurrentPreset(){
         aiModel: db.aiModel,
         subModel: db.subModel,
         currentPluginProvider: db.currentPluginProvider,
-        textgenWebUIURL: db.textgenWebUIURL,
+        textgenWebUIStreamURL: db.textgenWebUIStreamURL,
+        textgenWebUIBlockingURL: db.textgenWebUIBlockingURL,
         forceReplaceUrl: db.forceReplaceUrl,
         forceReplaceUrl2: db.forceReplaceUrl2,
         promptPreprocess: db.promptPreprocess,
@@ -791,10 +826,11 @@ export function saveCurrentPreset(){
         ooba: cloneDeep(db.ooba),
         ainconfig: cloneDeep(db.ainconfig),
         proxyRequestModel: db.proxyRequestModel,
-        openrouterRequestModel: db.openrouterRequestModel
+        openrouterRequestModel: db.openrouterRequestModel,
+        NAISettings: cloneDeep(db.NAIsettings)
     }
     db.botPresets = pres
-    DataBase.set(db)
+    setDatabase(db)
 }
 
 export function copyPreset(id:number){
@@ -804,7 +840,7 @@ export function copyPreset(id:number){
     const newPres = cloneDeep(pres[id])
     newPres.name += " Copy"
     db.botPresets.push(newPres)
-    DataBase.set(db)
+    setDatabase(db)
 }
 
 export function changeToPreset(id =0, savecurrent = true){
@@ -816,7 +852,7 @@ export function changeToPreset(id =0, savecurrent = true){
     const newPres = pres[id]
     db.botPresetsId = id
     db = setPreset(db, newPres)
-    DataBase.set(db)
+    setDatabase(db)
 }
 
 export function setPreset(db:Database, newPres: botPreset){
@@ -834,7 +870,8 @@ export function setPreset(db:Database, newPres: botPreset){
     db.aiModel = newPres.aiModel ?? db.aiModel
     db.subModel = newPres.subModel ?? db.subModel
     db.currentPluginProvider = newPres.currentPluginProvider ?? db.currentPluginProvider
-    db.textgenWebUIURL = newPres.textgenWebUIURL ?? db.textgenWebUIURL
+    db.textgenWebUIStreamURL = newPres.textgenWebUIStreamURL ?? db.textgenWebUIStreamURL
+    db.textgenWebUIBlockingURL = newPres.textgenWebUIBlockingURL ?? db.textgenWebUIBlockingURL
     db.forceReplaceUrl = newPres.forceReplaceUrl ?? db.forceReplaceUrl
     db.promptPreprocess = newPres.promptPreprocess ?? db.promptPreprocess
     db.forceReplaceUrl2 = newPres.forceReplaceUrl2 ?? db.forceReplaceUrl2
@@ -845,6 +882,9 @@ export function setPreset(db:Database, newPres: botPreset){
     db.ainconfig = cloneDeep(newPres.ainconfig ?? db.ainconfig)
     db.openrouterRequestModel = newPres.openrouterRequestModel ?? db.openrouterRequestModel
     db.proxyRequestModel = newPres.proxyRequestModel ?? db.proxyRequestModel
+    db.NAIsettings = newPres.NAISettings ?? db.NAIsettings
+    db.autoSuggestPrompt = newPres.autoSuggestPrompt ?? db.autoSuggestPrompt
+    db.autoSuggestPrefix = newPres.autoSuggestPrefix ?? db.autoSuggestPrefix
     return db
 }
 
@@ -856,7 +896,8 @@ export function downloadPreset(id:number){
     pres.forceReplaceUrl = ''
     pres.forceReplaceUrl2 = ''
     pres.proxyKey = ''
-    pres.textgenWebUIURL=  ''
+    pres.textgenWebUIStreamURL=  ''
+    pres.textgenWebUIBlockingURL=  ''
     downloadFile(pres.name + "_preset.json", Buffer.from(JSON.stringify(pres, null, 2)))
     alertNormal(language.successExport)
 }
@@ -870,5 +911,5 @@ export async function importPreset(){
     const pre = (JSON.parse(Buffer.from(f.data).toString('utf-8')))
     pre.name ??= "Imported"
     db.botPresets.push(pre)
-    DataBase.set(db)
+    setDatabase(db)
 }

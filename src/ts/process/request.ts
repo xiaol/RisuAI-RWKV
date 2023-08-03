@@ -3,11 +3,12 @@ import type { OpenAIChat, OpenAIChatFull } from ".";
 import { DataBase, setDatabase, type character } from "../storage/database";
 import { pluginProcess } from "../plugins/plugins";
 import { language } from "../../lang";
-import { stringlizeAINChat, stringlizeChat, stringlizeChatOba, unstringlizeAIN, unstringlizeChat } from "./stringlize";
-import { globalFetch, isNodeServer, isTauri } from "../storage/globalApi";
+import { stringlizeAINChat, stringlizeChat, stringlizeChatOba, getStopStrings, unstringlizeAIN, unstringlizeChat } from "./stringlize";
+import { addFetchLog, globalFetch, isNodeServer, isTauri } from "../storage/globalApi";
 import { sleep } from "../util";
 import { createDeep } from "./deepai";
 import { hubURL } from "../characterCards";
+import { NovelAIBadWordIds, stringlizeNAIChat } from "./models/nai";
 
 interface requestDataArgument{
     formated: OpenAIChat[]
@@ -87,8 +88,15 @@ export async function requestChatDataMain(arg:requestDataArgument, model:'model'
     let temperature = arg.temperature ?? (db.temperature / 100)
     let bias = arg.bias
     let currentChar = arg.currentChar
-    const aiModel = model === 'model' ? db.aiModel : db.subModel
-    switch(aiModel){
+    const aiModel = (model === 'model' || (!db.advancedBotSettings)) ? db.aiModel : db.subModel
+
+    let raiModel = aiModel
+    if(aiModel === 'reverse_proxy'){
+        if(db.proxyRequestModel.startsWith('claude')){
+            raiModel = 'claude'
+        }
+    }
+    switch(raiModel){
         case 'gpt35':
         case 'gpt35_0613':
         case 'gpt35_16k':
@@ -152,7 +160,9 @@ export async function requestChatDataMain(arg:requestDataArgument, model:'model'
                     : requestModel === "gpt4_0613" ? 'gpt-4-0613'
                     : requestModel === "gpt4_32k_0613" ? 'gpt-4-32k-0613'
                     : requestModel === 'gpt35_0301' ? 'gpt-3.5-turbo-0301'
-                    : requestModel === 'gpt4_0301' ? 'gpt-4-0301' : 'gpt-3.5-turbo',
+                    : requestModel === 'gpt4_0301' ? 'gpt-4-0301'
+                    : (!requestModel) ? 'gpt-3.5-turbo'
+                    : requestModel,
                 messages: formated,
                 temperature: temperature,
                 max_tokens: maxTokens,
@@ -164,6 +174,12 @@ export async function requestChatDataMain(arg:requestDataArgument, model:'model'
 
             let replacerURL = aiModel === 'openrouter' ? "https://openrouter.ai/api/v1/chat/completions" :
                 (aiModel === 'reverse_proxy') ? (db.forceReplaceUrl) : ('https://api.openai.com/v1/chat/completions')
+
+            let risuIdentify = false
+            if(replacerURL.startsWith("risu::")){
+                risuIdentify = true
+                replacerURL.replace("risu::", '')
+            }
 
             if(aiModel === 'reverse_proxy'){
                 if(replacerURL.endsWith('v1')){
@@ -191,15 +207,29 @@ export async function requestChatDataMain(arg:requestDataArgument, model:'model'
                 headers["X-Title"] = 'RisuAI'
                 headers["HTTP-Referer"] = 'https://risuai.xyz'
             }
+            if(risuIdentify){
+                headers["X-Proxy-Risu"] = 'RisuAI'
+            }
+            let throughProxi = (!isTauri) && (!isNodeServer) && (!db.usePlainFetch)
             if(db.useStreaming && arg.useStreaming){
                 body.stream = true
-                const da =  ((!isTauri) && (!isNodeServer) && (!db.usePlainFetch))
-                    ? await fetch(`/proxy2`, {
+                let urlHost = new URL(replacerURL).host
+                if(urlHost.includes("localhost") || urlHost.includes("172.0.0.1") || urlHost.includes("0.0.0.0")){
+                    if(!isTauri){
+                        return {
+                            type: 'fail',
+                            result: 'You are trying local request on streaming. this is not allowed dude to browser/os security policy. turn off streaming.',
+                        }
+                    }
+                }
+                const da =  (throughProxi)
+                    ? await fetch(hubURL + `/proxy2`, {
                         body: JSON.stringify(body),
                         headers: {
                             "risu-header": encodeURIComponent(JSON.stringify(headers)),
                             "risu-url": encodeURIComponent(replacerURL),
-                            "Content-Type": "application/json"
+                            "Content-Type": "application/json",
+                            "x-risu-tk": "use"
                         },
                         method: "POST",
                         signal: abortSignal
@@ -224,6 +254,13 @@ export async function requestChatDataMain(arg:requestDataArgument, model:'model'
                         result: await da.text()
                     }
                 }
+
+                addFetchLog({
+                    body: body,
+                    response: "Streaming",
+                    success: true,
+                    url: replacerURL,
+                })
 
                 let dataUint = new Uint8Array([])
 
@@ -266,7 +303,8 @@ export async function requestChatDataMain(arg:requestDataArgument, model:'model'
             const res = await globalFetch(replacerURL, {
                 body: body,
                 headers: headers,
-                abortSignal
+                abortSignal,
+                useRisuToken:throughProxi
             })
 
             const dat = res.data as any
@@ -301,35 +339,43 @@ export async function requestChatDataMain(arg:requestDataArgument, model:'model'
 
             break
         }
-        case 'novelai':{
-            if(!isTauri){
-                return{
-                    type: 'fail',
-                    result: "NovelAI doesn't work in web version."
-                }
+        case 'novelai':
+        case 'novelai_kayra':{
+            const proompt = stringlizeNAIChat(formated, currentChar?.name ?? '')
+
+            const gen = db.NAIsettings
+            const payload = {
+                temperature:temperature,
+                max_length: maxTokens,
+                min_length: 1,
+                top_k: gen.topK,
+                top_p: gen.topP,
+                top_a: gen.topA,
+                tail_free_sampling: gen.tailFreeSampling,
+                repetition_penalty: gen.repetitionPenalty,
+                repetition_penalty_range: gen.repetitionPenaltyRange,
+                repetition_penalty_slope: gen.repetitionPenaltySlope,
+                repetition_penalty_frequency: gen.frequencyPenalty,
+                repetition_penalty_presence: gen.presencePenalty,
+                generate_until_sentence: true,
+                use_cache: false,
+                use_string: true,
+                return_full_text: false,
+                prefix: 'vanilla',
+                order: [3,0],
+                bad_words_ids: NovelAIBadWordIds,
+                typical_p: gen.typicalp,
             }
-            const proompt = stringlizeChat(formated, currentChar?.name ?? '')
-            const params = {
+
+              
+            const body = {
                 "input": proompt,
-                "model":db.novelai.model,
-                "parameters":{
-                    "use_string":true,
-                    "temperature":1.7,
-                    "max_length":90,
-                    "min_length":1,
-                    "tail_free_sampling":0.6602,
-                    "repetition_penalty":1.0565,
-                    "repetition_penalty_range":340,
-                    "repetition_penalty_frequency":0,
-                    "repetition_penalty_presence":0,
-                    "use_cache":false,
-                    "return_full_text":false,
-                    "prefix":"vanilla",
-                "order":[3,0]}
+                "model": aiModel === 'novelai_kayra' ? 'kayra-v1' : 'clio-v1',
+                "parameters":payload
             }
 
             const da = await globalFetch("https://api.novelai.net/ai/generate", {
-                body: params,
+                body: body,
                 headers: {
                     "Authorization": "Bearer " + db.novelai.token
                 },
@@ -349,14 +395,14 @@ export async function requestChatDataMain(arg:requestDataArgument, model:'model'
         }
 
         case "textgen_webui":{
-            let DURL = db.textgenWebUIURL
+            let streamUrl = db.textgenWebUIStreamURL.replace(/\/api.*/, "/api/v1/stream")
+            let blockingUrl = db.textgenWebUIBlockingURL.replace(/\/api.*/, "/api/v1/generate")
             let bodyTemplate:any
-            const proompt = stringlizeChatOba(formated, currentChar?.name ?? '')
-            if(!DURL.endsWith('generate')){
-                DURL = DURL + "/v1/generate"
-            }
-            const stopStrings = [`\nUser:`,`\nuser:`,`\n${db.username}:`]
+            const suggesting = model === "submodel"
+            const proompt = stringlizeChatOba(formated, suggesting)
+            const stopStrings = getStopStrings(suggesting)
             console.log(proompt)
+            console.log(stopStrings)
             bodyTemplate = {
                 'max_new_tokens': db.maxResponse,
                 'do_sample': true,
@@ -379,7 +425,55 @@ export async function requestChatDataMain(arg:requestDataArgument, model:'model'
                 add_bos_token: true,
                 prompt: proompt
             }
-            const res = await globalFetch(DURL, {
+            if(db.useStreaming && arg.useStreaming){
+                const oobaboogaSocket = new WebSocket(streamUrl);
+                const statusCode = await new Promise((resolve) => {
+                    oobaboogaSocket.onopen = () => resolve(0)
+                    oobaboogaSocket.onerror = () => resolve(1001)
+                    oobaboogaSocket.onclose = ({ code }) => resolve(code)
+                })
+                if(abortSignal.aborted || statusCode !== 0) {
+                    oobaboogaSocket.close()
+                    return ({
+                        type: "fail",
+                        result: abortSignal.reason || `WebSocket connection failed to '${streamUrl}' failed!`,
+                    })
+                }
+
+                const close = () => {
+                    oobaboogaSocket.close()
+                }
+                const stream = new ReadableStream({
+                    start(controller){
+                        let readed = "";
+                        oobaboogaSocket.onmessage = async (event) => {
+                            const json = JSON.parse(event.data);
+                            if (json.event === "stream_end") {
+                                close()
+                                controller.close()
+                                return
+                            }
+                            if (json.event !== "text_stream") return
+                            readed += json.text
+                            controller.enqueue(readed)
+                        };
+                        oobaboogaSocket.send(JSON.stringify(bodyTemplate));
+                    },
+                    cancel(){
+                        close()
+                    }
+                })
+                oobaboogaSocket.onerror = close
+                oobaboogaSocket.onclose = close
+                abortSignal.addEventListener("abort", close)
+
+                return {
+                    type: 'streaming',
+                    result: stream
+                }
+            }
+
+            const res = await globalFetch(blockingUrl, {
                 body: bodyTemplate,
                 headers: {},
                 abortSignal
@@ -389,6 +483,9 @@ export async function requestChatDataMain(arg:requestDataArgument, model:'model'
             if(res.ok){
                 try {
                     let result:string = dat.results[0].text
+                    if(suggesting){
+                        result = "\n" + db.autoSuggestPrefix + result
+                    }
 
                     return {
                         type: 'success',
@@ -632,7 +729,26 @@ export async function requestChatDataMain(arg:requestDataArgument, model:'model'
             }
         }
         default:{     
-            if(aiModel.startsWith('claude')){
+            if(raiModel.startsWith('claude')){
+
+                let replacerURL = (aiModel === 'reverse_proxy') ? (db.forceReplaceUrl) : ('https://api.anthropic.com/v1/complete')
+                if(aiModel === 'reverse_proxy'){
+                    if(replacerURL.endsWith('v1')){
+                        replacerURL += '/complete'
+                    }
+                    else if(replacerURL.endsWith('v1/')){
+                        replacerURL += 'complete'
+                    }
+                    else if(!(replacerURL.endsWith('complete') || replacerURL.endsWith('complete/'))){
+                        if(replacerURL.endsWith('/')){
+                            replacerURL += 'v1/complete'
+                        }
+                        else{
+                            replacerURL += '/v1/complete'
+                        }
+                    }
+                }
+
                 for(let i=0;i<formated.length;i++){
                     if(arg.isGroupChat && formated[i].name){
                         formated[i].content = formated[i].name + ": " + formated[i].content
@@ -658,11 +774,11 @@ export async function requestChatDataMain(arg:requestDataArgument, model:'model'
                     return prefix + v.content
                 }).join('') + '\n\nAssistant: '
 
-                const da = await globalFetch('https://api.anthropic.com/v1/complete', {
+                const da = await globalFetch(replacerURL, {
                     method: "POST",
                     body: {
                         prompt : "\n\nHuman: " + requestPrompt,
-                        model: aiModel,
+                        model: raiModel,
                         max_tokens_to_sample: maxTokens,
                         stop_sequences: ["\n\nHuman:", "\n\nSystem:", "\n\nAssistant:"],
                         temperature: temperature,

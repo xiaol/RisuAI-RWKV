@@ -7,6 +7,9 @@
     import BarIcon from '../SideBars/BarIcon.svelte';
     import { User } from 'lucide-svelte';
     import { hubURL } from 'src/ts/characterCards';
+  import TextInput from '../UI/GUI/TextInput.svelte';
+  import { openURL } from 'src/ts/storage/globalApi';
+  import Button from '../UI/GUI/Button.svelte';
     let btn
     let input = ''
 
@@ -55,49 +58,70 @@
                         {@html msg}                        
                     {/await}
                 </span>
+            {:else if $alertStore.type === 'tos'}
+                <!-- svelte-ignore a11y-missing-attribute -->
+                <!-- svelte-ignore a11y-click-events-have-key-events -->
+                <div class="text-textcolor">You should accept RisuRealm's <a class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer" on:click={() => {
+                    openURL('https://sv.risuai.xyz/hub/tos')
+                }}>Terms of Service</a> to continue</div>
             {:else if $alertStore.type !== 'select'}
                 <span class="text-gray-300">{$alertStore.msg}</span>
             {/if}
             {#if $alertStore.type === 'ask'}
                 <div class="flex gap-2 w-full">
-                    <button bind:this={btn} class="mt-4 border-borderc bg-transparent outline-none border-solid border-1 p-2 text-lg text-neutral-200 hover:bg-green-500 transition-colors flex-1 focus:border-3" on:click={() => {
+                    <Button className="mt-4 flex-grow" on:click={() => {
                         alertStore.set({
                             type: 'none',
                             msg: 'yes'
                         })
-                    }}>YES</button>
-                    <button class="mt-4 border-borderc bg-transparent outline-none border-solid border-1 p-2 text-lg text-neutral-200 hover:bg-red-500 transition-colors focus:border-3 flex-1" on:click={() => {
+                    }}>YES</Button>
+                    <Button className="mt-4 flex-grow" on:click={() => {
                         alertStore.set({
                             type: 'none',
                             msg: 'no'
                         })
-                    }}>NO</button>
+                    }}>NO</Button>
+                </div>
+            {:else if $alertStore.type === 'tos'}
+                <div class="flex gap-2 w-full">
+                    <Button className="mt-4 flex-grow" on:click={() => {
+                        alertStore.set({
+                            type: 'none',
+                            msg: 'yes'
+                        })
+                    }}>Accept</Button>
+                    <Button className="mt-4 flex-grow" on:click={() => {
+                        alertStore.set({
+                            type: 'none',
+                            msg: 'no'
+                        })
+                    }}>Do not Accept</Button>
                 </div>
             {:else if $alertStore.type === 'select'}
                 {#each $alertStore.msg.split('||') as n, i}
-                    <button bind:this={btn} class="mt-4 border-borderc bg-transparent outline-none border-solid border-1 p-2 text-lg text-neutral-200 hover:bg-green-500 transition-colors focus:border-3" on:click={() => {
+                    <Button className="mt-4" on:click={() => {
                         alertStore.set({
                             type: 'none',
                             msg: i.toString()
                         })
-                    }}>{n}</button>
+                    }}>{n}</Button>
                 {/each}
             {:else if $alertStore.type === 'error' || $alertStore.type === 'normal' || $alertStore.type === 'markdown'}
-               <button bind:this={btn} class="mt-4 border-borderc bg-transparent outline-none border-solid border-1 p-2 text-lg text-neutral-200 hover:bg-green-500 transition-colors focus:border-3" on:click={() => {
+               <Button className="mt-4" on:click={() => {
                     alertStore.set({
                         type: 'none',
                         msg: ''
                     })
-                }}>OK</button>
+                }}>OK</Button>
             {:else if $alertStore.type === 'input'}
-                <input class="text-neutral-200 mt-2 p-2 bg-transparent input-text focus:bg-selected" value="" id="alert-input">
-                <button bind:this={btn} class="mt-4 border-borderc bg-transparent outline-none border-solid border-1 p-2 text-lg text-neutral-200 hover:bg-green-500 transition-colors focus:border-3" on:click={() => {
+                <TextInput value="" id="alert-input" autocomplete="off" marginTop />
+                <Button className="mt-4" on:click={() => {
                     alertStore.set({
                         type: 'none',
                         //@ts-ignore
                         msg: document.querySelector('#alert-input')?.value
                     })
-                }}>OK</button>
+                }}>OK</Button>
             {:else if $alertStore.type === 'login'}
                 <div class="fixed top-0 left-0 bg-black bg-opacity-50 w-full h-full flex justify-center items-center">
                     <iframe src={hubURL + '/hub/login'} title="login" class="w-full h-full">
@@ -137,7 +161,7 @@
         </div>
     </div>
 {:else if $alertStore.type === 'toast'}
-    <div class="toast-anime absolute right-0 bottom-0 bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl  max-h-11/12 overflow-y-auto z-50 text-neutral-200"
+    <div class="toast-anime absolute right-0 bottom-0 bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl  max-h-11/12 overflow-y-auto z-50 text-textcolor"
         on:animationend={() => {
             alertStore.set({
                 type: 'none',

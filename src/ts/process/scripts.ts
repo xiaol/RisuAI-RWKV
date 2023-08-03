@@ -1,11 +1,12 @@
 import { get } from "svelte/store";
 import { CharEmotion, selectedCharID } from "../stores";
-import { DataBase, setDatabase, type character, type customscript, type groupChat } from "../storage/database";
+import { DataBase, setDatabase, type character, type customscript, type groupChat, type Database } from "../storage/database";
 import { downloadFile } from "../storage/globalApi";
 import { alertError, alertNormal } from "../alert";
 import { language } from "src/lang";
-import { findCharacterbyId, selectSingleFile } from "../util";
-import { calcString } from "./infunctions";
+import { selectSingleFile } from "../util";
+import { risuChatParser as risuChatParserOrg } from "../parser";
+import { autoMarkPlugin } from "../plugins/automark";
 
 const dreg = /{{data}}/g
 const randomness = /\|\|\|/g
@@ -57,10 +58,18 @@ export function processScriptFull(char:character|groupChat, data:string, mode:Sc
     let db = get(DataBase)
     let emoChanged = false
     const scripts = (db.globalscript ?? []).concat(char.customscript)
+    if(db.officialplugins.automark && mode === 'editdisplay'){
+        data = autoMarkPlugin(data)
+    }
+    if(scripts.length === 0){
+        return {data, emoChanged}
+    }
     for (const script of scripts){
         if(script.type === mode){
             const reg = new RegExp(script.in, script.ableFlag ? script.flag : 'g')
-            let outScript = script.out.replaceAll("$n", "\n")
+            let outScript2 = script.out.replaceAll("$n", "\n")
+            let outScript = risuChatParser(outScript2.replace(dreg, "$&"), {chatID: chatID, db:db})
+
             if(outScript.startsWith('@@')){
                 if(reg.test(data)){
                     if(outScript.startsWith('@@emo ')){
@@ -117,10 +126,10 @@ export function processScriptFull(char:character|groupChat, data:string, mode:Sc
                                 case 'start':
                                     data = r[0] + data
                                     break
-                                case 'end nl':
+                                case 'end_nl':
                                     data = data + "\n" + r[0]
                                     break
-                                case 'start nl':
+                                case 'start_nl':
                                     data = r[0] + "\n" + data
                                     break
                             }
@@ -130,45 +139,17 @@ export function processScriptFull(char:character|groupChat, data:string, mode:Sc
                 }
             }
             else{
-                let mOut = outScript.replace(dreg, "$&")
-                if(chatID !== -1){
-                    const selchar = db.characters[get(selectedCharID)]
-                    const chat = selchar.chats[selchar.chatPage]
-                    mOut = mOut.replace(/{{(.+?)}}/g, (v, p1:string) => {
-                        if(p1 === 'previous_char_chat'){
-                            let pointer = chatID - 1
-                            while(pointer >= 0){
-                                if(chat.message[pointer].role === 'char'){
-                                    return chat.message[pointer].data
-                                }
-                                pointer--
-                            }
-                            return selchar.firstMsgIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[selchar.firstMsgIndex]
-                        }
-                        if(p1 === 'previous_user_chat'){
-                            let pointer = chatID - 1
-                            while(pointer >= 0){
-                                if(chat.message[pointer].role === 'user'){
-                                    return chat.message[pointer].data
-                                }
-                                pointer--
-                            }
-                            return selchar.firstMsgIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[selchar.firstMsgIndex]
-                        }
-                        if(p1.startsWith('calc')){
-                            const v = p1.split("::")[1]
-                            return calcString(v).toString()
-                        }
-                        return v
-                    })
-                }
                 if(randomness.test(data)){
                     const list = data.split('|||')
                     data = list[Math.floor(Math.random()*list.length)];
                 }
-                data = data.replace(reg, mOut)
+                data = risuChatParser(data.replace(reg, outScript), {chatID: chatID, db:db})
             }
         }
     }
     return {data, emoChanged}
 }
+
+
+const rgx = /(?:{{|<)(.+?)(?:}}|>)/gm
+export const risuChatParser = risuChatParserOrg

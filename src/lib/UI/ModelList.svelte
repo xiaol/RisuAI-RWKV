@@ -41,7 +41,9 @@
             case "custom":
                 return "Plugin"
             case "novelai":
-                return "NovelAI"
+                return "NovelAI Clio"
+            case "novelai_kayra":
+                return "NovelAI Kayra"
             case "novellist":
                 return "NovelList SuperTrin"
             case "novellist damsel":
@@ -72,7 +74,7 @@
     }}>
         <div class="w-96 max-w-full max-h-full overflow-y-auto overflow-x-hidden bg-bgcolor p-4 flex flex-col" on:click|stopPropagation>
             <h1 class="font-bold text-xl">{language.model}
-                <!-- <button class="float-right text-sm font-light text-gray-500 hover:text-green-300"
+                <!-- <button class="float-right text-sm font-light text-textcolor2 hover:text-green-300"
                 class:text-green-500={openAdv} on:click={() => {
                     openAdv = !openAdv
                 }}>
@@ -95,6 +97,8 @@
                 {/if}
             </Arcodion>
             <Arcodion name="Anthropic Claude">
+                <button class="p-2 hover:text-green-500" on:click={() => {changeModel('claude-2')}}>claude-2</button>
+                <button class="p-2 hover:text-green-500" on:click={() => {changeModel('claude-2-100k')}}>claude-2-100k</button>
                 <button class="p-2 hover:text-green-500" on:click={() => {changeModel('claude-v1')}}>claude-v1</button>
                 <button class="p-2 hover:text-green-500" on:click={() => {changeModel('claude-v1-100k')}}>claude-v1-100k</button>
                 <button class="p-2 hover:text-green-500" on:click={() => {changeModel('claude-instant-v1')}}>claude-instant-v1</button>
@@ -113,8 +117,11 @@
                 <button class="p-2 hover:text-green-500" on:click={() => {changeModel('novellist')}}>SuperTrin</button>
                 <button class="p-2 hover:text-green-500" on:click={() => {changeModel('novellist_damsel')}}>Damsel</button>
             </Arcodion>
-            {#if isTauri ||isNodeServer}
+            <Arcodion name="NovelAI">
                 <button class="hover:bg-selected px-6 py-2 text-lg" on:click={() => {changeModel('novelai')}}>NovelAI Clio</button>
+                <button class="hover:bg-selected px-6 py-2 text-lg" on:click={() => {changeModel('novelai_kayra')}}>NovelAI Kayra</button>
+            </Arcodion>
+            {#if isTauri ||isNodeServer}
                 <button class="hover:bg-selected px-6 py-2 text-lg" on:click={() => {changeModel('deepai')}}>DeepAI</button>
             {/if}
             <Arcodion name="Horde">

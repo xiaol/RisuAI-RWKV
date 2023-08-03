@@ -1,14 +1,13 @@
 import { get, writable } from "svelte/store";
 import { DataBase, saveImage, setDatabase, type character, type Chat, defaultSdDataFunc } from "./storage/database";
-import exifr from 'exifr'
 import { alertConfirm, alertError, alertNormal, alertSelect, alertStore } from "./alert";
 import { language } from "../lang";
-import { PngMetadata } from "./exif";
 import { encode as encodeMsgpack, decode as decodeMsgpack } from "msgpackr";
 import { checkNullish, findCharacterbyId, selectMultipleFile, selectSingleFile, sleep } from "./util";
 import { v4 as uuidv4 } from 'uuid';
 import { selectedCharID } from "./stores";
 import { checkCharOrder, downloadFile, getFileSrc, readImage } from "./storage/globalApi";
+import * as yuso from 'yuso'
 
 export function createNewCharacter() {
     let db = get(DataBase)
@@ -87,7 +86,36 @@ export async function selectUserImg() {
     let db = get(DataBase)
     const imgp = await saveImage(img)
     db.userIcon = imgp
+    db.personas[db.selectedPersona] = {
+        name: db.username,
+        icon: db.userIcon,
+        personaPrompt: db.personaPrompt
+    }
     setDatabase(db)
+}
+
+export function saveUserPersona() {
+    let db = get(DataBase)
+    db.personas[db.selectedPersona] = {
+        name: db.username,
+        icon: db.userIcon,
+        personaPrompt: db.personaPrompt
+    }
+    setDatabase(db)
+}
+
+export function changeUserPersona(id:number, save:'save'|'noSave' = 'save') {
+    if(save === 'save'){
+        saveUserPersona()
+    }
+    let db = get(DataBase)
+    const pr = db.personas[id]
+    db.personaPrompt = pr.personaPrompt
+    db.username = pr.name,
+    db.userIcon = pr.icon
+    db.selectedPersona = id
+    setDatabase(db)
+    
 }
 
 export const addingEmotion = writable(false)
@@ -274,6 +302,7 @@ export function characterFormatUpdate(index:number|character){
         if(checkNullish(cha.utilityBot)){
             cha.utilityBot = false
         }
+        cha.triggerscript = cha.triggerscript ?? []
         cha.alternateGreetings = cha.alternateGreetings ?? []
         cha.exampleMessage = cha.exampleMessage ?? ''
         cha.creatorNotes = cha.creatorNotes ?? ''
@@ -360,7 +389,8 @@ export function createBlankChar():character{
         personality:"",
         scenario:"",
         firstMsgIndex: -1,
-        replaceGlobalNote: ""
+        replaceGlobalNote: "",
+        triggerscript: []
     }
 }
 
@@ -464,9 +494,9 @@ export async function addDefaultCharacters() {
 
     for(const img of imgs){
         const imgBuffer = await (await img).arrayBuffer()
-        const readed = (await exifr.parse(imgBuffer, true))
+        const readed = yuso.decode(Buffer.from(imgBuffer), "risuai")
         await sleep(10)
-        const va = decodeMsgpack(Buffer.from(readed.risuai, 'base64')) as any
+        const va = decodeMsgpack(Buffer.from(readed,'base64')) as any
         if(va.type !== 101){
             alertError(language.errors.noData)
             return
@@ -492,7 +522,7 @@ export async function addDefaultCharacters() {
         }
 
         char.chatPage = 0
-        char.image = await saveImage(PngMetadata.filter(Buffer.from(imgBuffer)))
+        char.image = await saveImage(yuso.trim(Buffer.from(imgBuffer)))
         char.chaId = uuidv4()
         db.characters.push(characterFormatUpdate(char))
         setDatabase(db)

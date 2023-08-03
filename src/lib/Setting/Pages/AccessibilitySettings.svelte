@@ -1,5 +1,5 @@
 <script lang="ts">
-    import Check from "src/lib/Others/Check.svelte";
+    import Check from "src/lib/UI/GUI/CheckInput.svelte";
     import { language } from "src/lang";
     import { DataBase } from "src/ts/storage/database";
 
@@ -24,6 +24,10 @@
 
 <div class="flex items-center mt-2">
     <Check bind:check={$DataBase.clickToEdit} name={language.clickToEdit}/>
+</div>
+
+<div class="flex items-center mt-2">
+    <Check bind:check={$DataBase.botSettingAtStart} name={language.botSettingAtStart}/>
 </div>
 
 <div class="flex items-center mt-2">

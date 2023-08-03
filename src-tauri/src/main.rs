@@ -10,7 +10,7 @@ fn greet(name: &str) -> String {
 use serde_json::Value;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use base64::{engine::general_purpose, Engine as _};
-use std::time::Duration;
+use std::{time::Duration, path::Path};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -76,9 +76,55 @@ async fn native_request(url: String, body: String, header: String, method:String
     }
 }
 
+#[tauri::command]
+fn check_auth(fpath: String, auth: String) -> bool{
+    //check file exists
+    let path = Path::new(&fpath);
+    if !path.exists() {
+        println!("File {} does not exist", path.display());
+        return false;
+    }
+
+    // check file is a file
+    if !path.is_file() {
+        println!("File {} is not a file", path.display());
+        return false;
+    }
+
+    // check file size
+    let size = std::fs::metadata(&fpath).unwrap().len();
+
+    //check file size is less than 1000 bytes
+    if size > 1000 {
+        println!("File {} is too large", path.display());
+        return false;
+    }
+    
+
+
+    // read file, return false when error
+    let got_auth = std::fs::read_to_string(&path);
+
+    // check read error
+    if got_auth.is_err() {
+        println!("Error reading file {}", path.display());
+        return false;
+    }
+    else{
+        // check auth
+        if got_auth.unwrap() != auth {
+            println!("Auth does not match");
+            return false;
+        }
+        println!("Auth matches");
+        return true;
+    }
+    
+}
+
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![greet, native_request])
+        .invoke_handler(tauri::generate_handler![greet, native_request, check_auth])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
