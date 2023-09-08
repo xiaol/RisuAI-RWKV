@@ -1,4 +1,4 @@
-# RisuAI
+# RWKV RisuAI
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/kwaroran/RisuAI/assets/116663078/efbbfe78-65ad-43ef-89f8-36fa94826925">
   <img alt="text" src="https://github.com/kwaroran/RisuAI/assets/116663078/bc28e5a3-c6da-4a42-bfc1-f3ab3debdf65">
