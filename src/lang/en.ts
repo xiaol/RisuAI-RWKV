@@ -12,6 +12,7 @@ export const languageEnglish = {
         "description": "Character Description",
         'personaPrompt':'Persona Prompt',
         'plain': "Plain Prompt",
+        'memory': "Supa/HypaMemory"
     },
     errors:{
         toomuchtoken: 'Error: The minimum required token is greater than the Max Context Size.',
@@ -92,7 +93,8 @@ export const languageEnglish = {
         replaceGlobalNote: "If its not blank, it replaces current global note to this.",
         backgroundHTML: "A Markdown/HTML Data that would be injected to the background of chat screen.\n\n you can also use additional assets. for example, you can use `{{audio::<asset name}}` for background music."
             + "\n\n Additionaly, you can use these with additional assets:"
-            + "\n - `{{bg::<asset name>}}`: inject the background as asset"
+            + "\n - `{{bg::<asset name>}}`: inject the background as asset",
+        additionalText: "The text that would be added to Character Description only when ai thinks its needed, so you can put long texts here. seperate with double newlines.",
     },
     setup: {
         chooseProvider: "Choose AI Provider",
@@ -433,4 +435,6 @@ export const languageEnglish = {
     textAdventureNAI: "Run as Text Adventure",
     appendNameNAI: "Append Name on NAI",
     customStopWords: "Custom Stop Words",
+    defaultPrompt: "Default Prompt",
+    additionalText: 'Additional Description',
 }

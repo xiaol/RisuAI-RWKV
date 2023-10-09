@@ -5,7 +5,7 @@ import { ChatTokenizer, tokenize, tokenizeNum } from "../tokenizer";
 import { language } from "../../lang";
 import { alertError } from "../alert";
 import { loadLoreBookPrompt } from "./lorebook";
-import { findCharacterbyId } from "../util";
+import { findCharacterbyId, getAuthorNoteDefaultText } from "../util";
 import { requestChatData } from "./request";
 import { stableDiff } from "./stableDiff";
 import { processScript, processScriptFull, risuChatParser } from "./scripts";
@@ -17,12 +17,14 @@ import { clone, cloneDeep } from "lodash";
 import { groupOrder } from "./group";
 import { runTrigger, type additonalSysPrompt } from "./triggers";
 import { HypaProcesser } from "./memory/hypamemory";
+import { additionalInformations } from "./embedding/addinfo";
 
 export interface OpenAIChat{
     role: 'system'|'user'|'assistant'|'function'
     content: string
     memo?:string
     name?:string
+    removable?:boolean
 }
 
 export interface OpenAIChatFull extends OpenAIChat{
@@ -215,9 +217,21 @@ export async function sendChat(chatProcessIndex = -1,arg:{chatAdditonalTokens?:n
             content: risuChatParser(currentChat.note, {chara: currentChar})
         })
     }
+    else if(getAuthorNoteDefaultText() !== ''){
+        unformated.authorNote.push({
+            role: 'system',
+            content: risuChatParser(getAuthorNoteDefaultText(), {chara: currentChar})
+        })
+    }
 
     {
         let description = risuChatParser((db.promptPreprocess ? db.descriptionPrefix: '') + currentChar.desc, {chara: currentChar})
+
+        const additionalInfo = await additionalInformations(currentChar, currentChat)
+
+        if(additionalInfo){
+            description += '\n\n' + risuChatParser(additionalInfo, {chara:currentChar})
+        }
 
         if(currentChar.personality){
             description += risuChatParser("\n\nDescription of {{char}}: " + currentChar.personality, {chara: currentChar})
@@ -262,6 +276,10 @@ export async function sendChat(chatProcessIndex = -1,arg:{chatAdditonalTokens?:n
 
     //await tokenize currernt
     let currentTokens = db.maxResponse
+    let supaMemoryCardUsed = false
+    
+    //for unexpected error
+    currentTokens += 50
     
 
     if(promptTemplate){
@@ -300,7 +318,14 @@ export async function sendChat(chatProcessIndex = -1,arg:{chatAdditonalTokens?:n
                     break
                 }
                 case 'authornote':{
-                    await tokenizeChatArray(unformated.authorNote)
+                    let pmt = cloneDeep(unformated.authorNote)
+                    if(card.innerFormat && pmt.length > 0){
+                        for(let i=0;i<pmt.length;i++){
+                            pmt[i].content = risuChatParser(card.innerFormat, {chara: currentChar}).replace('{{slot}}', pmt[i].content || card.defaultText || '')
+                        }
+                    }
+
+                    await tokenizeChatArray(pmt)
                     break
                 }
                 case 'lorebook':{
@@ -366,6 +391,10 @@ export async function sendChat(chatProcessIndex = -1,arg:{chatAdditonalTokens?:n
                     await tokenizeChatArray(chats)
                     break
                 }
+                case 'memory':{
+                    supaMemoryCardUsed = true
+                    break
+                }
             }
         }
     }
@@ -377,7 +406,6 @@ export async function sendChat(chatProcessIndex = -1,arg:{chatAdditonalTokens?:n
             }
         }
     }
-
     
     const examples = exampleMessage(currentChar, db.username)
 
@@ -387,12 +415,14 @@ export async function sendChat(chatProcessIndex = -1,arg:{chatAdditonalTokens?:n
 
     let chats:OpenAIChat[] = examples
 
-    
-    chats.push({
-        role: 'system',
-        content: '[Start a new chat]',
-        memo: "NewChat"
-    })
+    console.log(db.aiModel)
+    if(!db.aiModel.startsWith('novelai')){
+        chats.push({
+            role: 'system',
+            content: '[Start a new chat]',
+            memo: "NewChat"
+        })
+    }
 
     if(nowChatroom.type !== 'group'){
         const firstMsg = nowChatroom.firstMsgIndex === -1 ? nowChatroom.firstMessage : nowChatroom.alternateGreetings[nowChatroom.firstMsgIndex]
@@ -474,6 +504,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{chatAdditonalTokens?:n
         return [risuChatParser(v[0].replaceAll("\\n","\n"), {chara: currentChar}),v[1]]
     })
 
+    let memories:OpenAIChat[] = []
 
 
 
@@ -482,7 +513,21 @@ export async function sendChat(chatProcessIndex = -1,arg:{chatAdditonalTokens?:n
         chats.splice(chats.length - 1, 1)
     }
 
-    unformated.chats = chats
+    unformated.chats = chats.map((v) => {
+        if(v.memo !== 'supaMemory' && v.memo !== 'hypaMemory'){
+            v.removable = true
+        }
+        else if(supaMemoryCardUsed){
+            memories.push(v)
+            return {
+                role: 'system',
+                content: '',
+            } as const
+        }
+        return v
+    }).filter((v) => {
+        return v.content !== ''
+    })
 
 
     if(triggerResult){
@@ -529,6 +574,10 @@ export async function sendChat(chatProcessIndex = -1,arg:{chatAdditonalTokens?:n
             if(!chat.content){
                 continue
             }
+            if(!(db.aiModel.startsWith('gpt') || db.aiModel.startsWith('claude') || db.aiModel === 'openrouter' || db.aiModel === 'reverse_proxy')){
+                formated.push(chat)
+                continue
+            }
             if(chat.role === 'system'){
                 const endf = formated.at(-1)
                 if(endf && endf.role === 'system' && endf.memo === chat.memo && endf.name === chat.name){
@@ -573,7 +622,14 @@ export async function sendChat(chatProcessIndex = -1,arg:{chatAdditonalTokens?:n
                     break
                 }
                 case 'authornote':{
-                    pushPrompts(unformated.authorNote)
+                    let pmt = cloneDeep(unformated.authorNote)
+                    if(card.innerFormat && pmt.length > 0){
+                        for(let i=0;i<pmt.length;i++){
+                            pmt[i].content = risuChatParser(card.innerFormat, {chara: currentChar}).replace('{{slot}}', pmt[i].content || card.defaultText || '')
+                        }
+                    }
+
+                    pushPrompts(pmt)
                     break
                 }
                 case 'lorebook':{
@@ -640,6 +696,16 @@ export async function sendChat(chatProcessIndex = -1,arg:{chatAdditonalTokens?:n
                     pushPrompts(chats)
                     break
                 }
+                case 'memory':{
+                    let pmt = cloneDeep(memories)
+                    if(card.innerFormat && pmt.length > 0){
+                        for(let i=0;i<pmt.length;i++){
+                            pmt[i].content = risuChatParser(card.innerFormat, {chara: currentChar}).replace('{{slot}}', pmt[i].content)
+                        }
+                    }
+
+                    pushPrompts(pmt)
+                }
             }
         }
     }
@@ -656,6 +722,32 @@ export async function sendChat(chatProcessIndex = -1,arg:{chatAdditonalTokens?:n
         return v
     })
 
+    {
+        //token rechecking
+        let tokens = 0
+        for(const chat of formated){
+            tokens += await tokenizer.tokenizeChat(chat)
+        }
+
+        if(tokens > maxContextTokens){
+            let pointer = 0
+            while(tokens > maxContextTokens){
+                if(pointer >= formated.length){
+                    alertError(language.errors.toomuchtoken + "\n\nRequired Tokens: " + tokens)
+                    return false
+                }
+                if(formated[pointer].removable){
+                    tokens -= await tokenizer.tokenizeChat(formated[pointer])
+                    formated[pointer].content = ''
+                }
+                pointer++
+            }
+            formated = formated.filter((v) => {
+                return v.content !== ''
+            })
+        }
+    }
+
 
     const req = await requestChatData({
         formated: formated,
@@ -663,7 +755,8 @@ export async function sendChat(chatProcessIndex = -1,arg:{chatAdditonalTokens?:n
         currentChar: currentChar,
         useStreaming: true,
         isGroupChat: nowChatroom.type === 'group',
-        bias: {}
+        bias: {},
+        continue: arg.continue,
     }, 'model', abortSignal)
 
     let result = ''

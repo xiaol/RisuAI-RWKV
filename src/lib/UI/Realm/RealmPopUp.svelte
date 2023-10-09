@@ -17,7 +17,7 @@
 <div class="top-0 left-0 z-50 fixed w-full h-full bg-black bg-opacity-50 flex justify-center items-center text-textcolor" on:click={() => {
     openedData = null
 }}>
-    <div class="p-6 max-w-full bg-darkbg rounded-md flex flex-col gap-4 w-2xl overflow-y-auto">
+    <div class="p-6 max-w-full bg-darkbg rounded-md flex flex-col gap-4 w-2xl overflow-y-auto max-h-full">
         <div class="w-full flex flex-col">
             <h1 class="text-2xl font-bold max-w-full overflow-hidden whitespace-nowrap text-ellipsis">{openedData.name}</h1>
             {#if openedData.authorname}
@@ -57,7 +57,7 @@
             <button class="text-textcolor2 hover:text-red-500" on:click|stopPropagation={async () => {
                 const conf = await alertConfirm('Report this character?')
                 if(conf){
-                    const report = await alertInput('Write a report text that would be sent to the admin')
+                    const report = await alertInput('Write a report text that would be sent to the admin (for copywrite issues, use email)')
                     const da = await fetch(hubURL + '/hub/report', {
                         method: "POST",
                         body: JSON.stringify({

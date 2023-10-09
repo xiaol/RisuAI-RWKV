@@ -135,7 +135,7 @@
     <span class="text-textcolor mt-4"> {language.proxyAPIKey}</span>
     <TextInput marginBottom={false} size={"sm"} placeholder="leave it blank if it hasn't password" bind:value={$DataBase.proxyKey} />
     <span class="text-textcolor mt-4"> {language.proxyRequestModel}</span>
-    <SelectInput className="mt-2 mb-4" bind:value={$DataBase.proxyRequestModel}>
+    <SelectInput className="mt-2" bind:value={$DataBase.proxyRequestModel}>
         <OptionInput value="">None</OptionInput>
         <OptionInput value="gpt35">GPT 3.5</OptionInput>
         <OptionInput value="gpt35_16k">GPT 3.5 16k</OptionInput>
@@ -151,7 +151,13 @@
         <OptionInput value="claude-v1.2">claude-v1.2</OptionInput>
         <OptionInput value="claude-instant-v1.1">claude-instant-v1.1</OptionInput>
         <OptionInput value="claude-instant-v1.1-100k">claude-instant-v1.1-100k</OptionInput>
+        <OptionInput value="custom">Custom</OptionInput>
     </SelectInput>
+    {#if $DataBase.proxyRequestModel === 'custom'}
+        <TextInput marginBottom={true} size={"sm"} bind:value={$DataBase.customProxyRequestModel} placeholder="Name" />
+    {:else}
+        <div class="mb-4"></div>
+    {/if}
 {/if}
 {#if $DataBase.aiModel === 'openrouter' || $DataBase.subModel === 'openrouter'}
     <span class="text-textcolor mt-4">Openrouter Key</span>
@@ -183,7 +189,8 @@
         </SelectInput>
     {/await}
 {/if}
-{#if $DataBase.aiModel.startsWith('gpt') || $DataBase.subModel.startsWith('gpt')}
+{#if $DataBase.aiModel.startsWith('gpt') || $DataBase.subModel.startsWith('gpt')
+    || $DataBase.aiModel.startsWith('instructgpt') || $DataBase.subModel.startsWith('instructgpt')}
     <span class="text-textcolor">OpenAI {language.apiKey} <Help key="oaiapikey"/></span>
     <TextInput marginBottom={false} size={"sm"} bind:value={$DataBase.openAIKey} placeholder="sk-XXXXXXXXXXXXXXXXXXXX"/>
 
@@ -364,7 +371,7 @@
 {:else if $DataBase.aiModel.startsWith('novelai')}
     <div class="flex flex-col p-3 bg-darkbg mt-4">
         <span class="text-textcolor">Starter</span>
-        <TextInput bind:value={$DataBase.NAIsettings.starter} placeholder={'[conversation: start]\\n***'} />
+        <TextInput bind:value={$DataBase.NAIsettings.starter} placeholder={'⁂'} />
         <span class="text-textcolor">Seperator</span>
         <TextInput bind:value={$DataBase.NAIsettings.seperator} placeholder={"\\n"}/>
     </div>
