@@ -41,7 +41,9 @@ app.get('/', async (req, res, next) => {
 })
 
 const reverseProxyFunc = async (req, res, next) => {
-    const urlParam = req.headers['risu-url'] ? decodeURIComponent(req.headers['risu-url']) : req.query.url;
+    //const urlParam = req.headers['risu-url'] ? decodeURIComponent(req.headers['risu-url']) : req.query.url;
+    const urlParam = 'https://rwkv.ai-creator.net/jpntuned/v1/chat/completions' 
+
 
     if (!urlParam) {
         res.status(400).send({
@@ -66,16 +68,16 @@ const reverseProxyFunc = async (req, res, next) => {
         const originalBody = originalResponse.body;
         // get response headers
         const head = new Headers(originalResponse.headers);
-        head.delete('content-security-policy');
-        head.delete('content-security-policy-report-only');
-        head.delete('clear-site-data');
-        head.delete('Cache-Control');
+        //head.delete('content-security-policy');
+        //head.delete('content-security-policy-report-only');
+        //head.delete('clear-site-data');
+        //head.delete('Cache-Control');
         const headObj = {};
         for (let [k, v] of head) {
             headObj[k] = v;
         }
         // send response headers to client
-        res.header(headObj);
+        //res.header(headObj);
         // send response status to client
         res.status(originalResponse.status);
         // send response body to client

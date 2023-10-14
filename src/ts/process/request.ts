@@ -198,7 +198,10 @@ export async function requestChatDataMain(arg:requestDataArgument, model:'model'
                 presence_penalty: arg.PresensePenalty || (db.PresensePenalty / 100),
                 frequency_penalty: arg.frequencyPenalty || (db.frequencyPenalty / 100),
                 logit_bias: bias,
-                stream: false
+                stream: false,
+		//user_name: db.username,
+		//assistant_name: currentChar.name
+		
             })
 
             let replacerURL = aiModel === 'openrouter' ? "https://openrouter.ai/api/v1/chat/completions" :
